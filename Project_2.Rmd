@@ -1,0 +1,383 @@
+---
+title: "Project_2"
+author: "Alden Swain"
+date: "2023-12-15"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+Data<-read.csv("kc_house_data.csv", sep=",", header=TRUE)
+```
+
+# Section 4
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(faraway)
+library(ROCR)
+
+set.seed(6021)
+sample.data<-sample.int(nrow(Data), floor(.50*nrow(Data)), replace = F)
+train<-Data[sample.data, ]
+test<-Data[-sample.data, ]
+```
+
+```{r}
+library(scales)
+
+ggplot(data = train, aes(x = sqft_living, y = price, size = sqft_lot, color = factor(bedrooms))) +
+  geom_point() +
+  labs(title = "Price vs Sqft Living with Size based on Sqft Lot, Colored by Bedrooms",
+       x = "Sqft Living", y = "Price") +
+  scale_y_continuous(labels = dollar_format(prefix = "$")) 
+
+```
+```{r}
+train <- train %>% mutate(size_prop= round((sqft_living/sqft_lot) * 100, 2))
+train$waterfront <- factor(train$waterfront)
+levels(Data$waterfront) <- c("No", "Yes")
+
+ggplot(data = train, aes(x = size_prop, y = price, color = waterfront)) +
+  geom_point()
+```
+```{r}
+ggplot(train, aes(x=long, y=lat, color=price))+
+geom_point()+
+labs(x="Longitude", y="Latitude", title="Price by Location")+
+scale_color_gradient(low = "blue", high = "red",)
+
+```
+# Section 5
+
+```{r}
+Data<-read.csv("kc_house_data.csv", sep=",", header=TRUE)
+
+Data$waterfront <- factor(Data$waterfront)
+levels(Data$waterfront) <- c("No", "Yes")
+
+Data <- Data %>% mutate(size_prop= round((sqft_living/sqft_lot) * 100, 2))
+
+Data <- Data[-c(9715, 12778, 15871, 20453),]
+
+set.seed(6021);
+sample.data <- sample.int(nrow(Data), floor(.50 * nrow(Data)), replace = FALSE)
+
+
+train<-Data[sample.data, ]
+test<-Data[-sample.data, ]
+```
+
+```{r, results='hide'}
+regnull <- lm(price~1, data=train)
+regfull<-lm(price~bedrooms+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+grade+condition+sqft_above+sqft_basement+yr_built+yr_renovated+sqft_living15+sqft_lot15+size_prop, data=train)
+
+step(regnull, scope=list(lower=regnull, upper=regfull), direction="forward")
+```
+```{r}
+step_mod <- lm(price~ sqft_living + grade + yr_built + waterfront + size_prop + view + bedrooms + bathrooms + sqft_living15 + condition + yr_renovated + sqft_lot15, data=train) 
+
+summary(step_mod)
+```
+```{r}
+reduced <- lm(price~ sqft_living + grade + yr_built + waterfront + size_prop + view + bedrooms + bathrooms + sqft_living15 + condition + yr_renovated, data=train)
+
+summary(reduced)
+```
+```{r}
+anova(reduced, step_mod)
+```
+```{r}
+par(mfrow=c(2,2))
+```
+
+
+```{r}
+plot(step_mod)
+```
+```{r}
+library(MASS)
+MASS::boxcox(step_mod, lambda = seq(0, 0.2, 1/20))
+```
+```{r}
+step_star<-(train$price)**0.1 
+
+train_step<-data.frame(train,step_star) 
+
+train.ystar<-lm(step_star~sqft_living + grade + yr_built + waterfront + size_prop + view + bedrooms + bathrooms + sqft_living15 + condition + yr_renovated + sqft_lot15, data=train_step)
+
+par(mfrow = c(2, 2))
+plot(train.ystar)
+```
+
+```{r}
+sort(faraway::vif(train.ystar))
+```
+```{r}
+#leverages
+step_hii <- lm.influence(train.ystar)$hat 
+
+#ext studentized res
+step_student <- rstudent(train.ystar)
+
+n <- nrow(train)
+p <- 12
+```
+
+```{r, results='hide'}
+sort(step_hii[step_hii>2*p/n], decreasing = T)
+```
+```{r}
+step_student[abs(step_student) > 4]
+```
+```{r}
+plot(step_student)
+```
+
+```{r, results='hide'}
+DFFITS<-dffits(train.ystar)
+
+sort(DFFITS[abs(DFFITS)>2*sqrt(p/n)], decreasing=T)
+```
+```{r}
+COOKS<- cooks.distance(train.ystar)
+```
+
+
+```{r, results='hide'}
+sort(COOKS, decreasing=T)
+```
+```{r, results='hide'}
+DFBETAS<-dfbetas(train.ystar)
+
+abs(DFBETAS)>2/sqrt(n)
+```
+
+```{r}
+predictions <- predict(train.ystar, newdata = test)
+test$price_transform <- (test$price)**0.1
+```
+```{r}
+mse <- mean((test$price_transform - predictions)^2)
+```
+
+```{r}
+rmse <- sqrt(mse)
+rmse
+```
+
+```{r}
+# Mean Absolute Error
+mae <- mean(abs(test$price_transform - predictions))
+mae
+```
+
+```{r}
+# R-squared
+rsquared <- 1 - sum((test$price_transform - predictions)^2) / sum((test$price_transform - mean(test$price_transform))^2)
+rsquared
+```
+
+
+# Section 6
+
+```{r}
+ggplot(train, aes(x=yr_built, y=grade, fill=condition))+
+geom_tile(width = 1, height = 1)+
+scale_fill_gradient(low = "blue", high = "red",)
+```
+
+```{r}
+ggplot(data = train, aes(x = grade, y = price)) + geom_point(alpha = 0.5, color = "blue") + scale_y_continuous(labels = dollar_format(prefix = "$")) + scale_x_continuous(breaks = 1:13) + labs(title = "Grade vs Price", x = "Grade", y = "Price")
+```
+
+```{r}
+train$reno <- ifelse(train$yr_renovated > 0, 'Yes', 'No')
+train$decade <- as.character(floor((train$yr_built - 1) / 10) * 10)
+
+ggplot(data = train, aes(x = reno, y = grade, fill=reno)) + geom_boxplot() + facet_wrap(~decade) + scale_fill_manual(values = c("No" = "red", "Yes" = "green")) + labs(title = "Grade by Renovation Status Faceted by Decade", x = "Renovation Status", y = "Grade")
+```
+
+```{r}
+train$quality <- cut(train$grade, breaks=c(0,10,13),
+                  labels=c('LQ','HQ'))
+
+ggplot(train, aes(x=long, y=lat, color=quality, size=waterfront))+
+geom_point()+
+labs(x="Longitude", y="Latitude", title="Grade Rating by Location")
+```
+
+# Section 7
+
+```{r}
+Data$waterfront <- factor(Data$waterfront)
+Data$view <- factor(Data$view)
+Data$condition <- factor(Data$condition)
+```
+
+```{r}
+Data$quality <- cut(Data$grade, breaks=c(0,10,13),
+                  labels=c('LQ','HQ'))
+ 
+Data$hq <- cut(Data$grade, breaks=c(0,10,13),
+                  labels=c(0,1))
+Data$reno <- ifelse(Data$yr_renovated > 0, 'Yes', 'No')
+```
+
+```{r}
+set.seed(6021)
+sample.data<-sample.int(nrow(Data), floor(.50*nrow(Data)), replace = F)
+train<-Data[sample.data, ]
+test<-Data[-sample.data, ]
+```
+
+```{r}
+# remove outlier
+train2 <- train[train$bedrooms!=33,]
+# remove 33 bedrooms as clear outlier (likely misinput)
+```
+
+```{r}
+# proportion charts
+ 
+chart1<-ggplot2::ggplot(train2, aes(x=condition, fill=quality))+
+geom_bar(position = "fill")+
+labs(x="condition", y="Proportion",
+title="Proportion of quality by condition")
+ 
+chart2<-ggplot2::ggplot(train2, aes(x=view, fill=quality))+
+geom_bar(position = "fill")+
+labs(x="view", y="Proportion",
+title="Proportion of quality by view")
+ 
+chart3<-ggplot2::ggplot(train2, aes(x=waterfront, fill=quality))+
+geom_bar(position = "fill")+
+labs(x="If Waterfront", y="Proportion",
+title="Proportion of quality by if waterfront")
+ 
+chart4<-ggplot2::ggplot(train2, aes(x=reno, fill=quality))+
+geom_bar(position = "fill")+
+labs(x="If Renovated", y="Proportion",
+title="Proportion of quality by if renovated")
+ 
+gridExtra::grid.arrange(chart1, chart2, chart3, chart4, ncol = 2, nrow = 2)
+```
+
+```{r}
+# density plots
+ 
+dp1<-ggplot2::ggplot(train2,aes(x=price, color=quality))+
+geom_density()+
+labs(title="Density Plot of price by quality")
+ 
+dp2<-ggplot2::ggplot(train2,aes(x=sqft_living, color=quality))+
+geom_density()+
+labs(title="Density Plot of sqft_living by quality")
+ 
+dp3<-ggplot2::ggplot(train2,aes(x=sqft_above, color=quality))+
+geom_density()+
+labs(title="Density Plot of sqft_above by quality")
+ 
+dp4<-ggplot2::ggplot(train2,aes(x=bedrooms, color=quality))+
+geom_density()+
+labs(title="Density Plot of bedrooms by quality")
+ 
+dp5<-ggplot2::ggplot(train2,aes(x=bathrooms, color=quality))+
+geom_density()+
+labs(title="Density Plot of bathrooms by quality")
+ 
+dp6<-ggplot2::ggplot(train,aes(x=yr_built, color=quality))+
+geom_density()+
+labs(title="Density Plot of yr_built by quality")
+ 
+ 
+gridExtra::grid.arrange(dp1, dp2, dp3, dp4, dp5, dp6, ncol = 2, nrow = 3)
+```
+
+```{r}
+# start with a large model
+result <- glm(hq~yr_built+view+waterfront+sqft_above+sqft_living+bedrooms+bathrooms, family=binomial, data=train2)
+summary(result)
+```
+```{r}
+# first reduction
+reduced1 <- glm(hq~price+yr_built+view+waterfront+sqft_above+sqft_living+bedrooms, family=binomial, data=train2)
+summary(reduced1)
+```
+```{r}
+# Tukey on view
+ 
+library(multcomp)
+pairwise<-multcomp::glht(reduced1, linfct = mcp(view= "Tukey"))
+summary(pairwise)
+```
+```{r}
+reduced2 <- glm(hq~price+yr_built+waterfront+sqft_above+sqft_living+bedrooms, family=binomial, data=train2)
+summary(reduced2)
+```
+```{r}
+reduced3 <- glm(hq~price+yr_built+sqft_above+sqft_living+bedrooms, family=binomial, data=train2)
+summary(reduced3)
+```
+```{r}
+# check for potential multicollinearity
+faraway::vif(reduced3)
+```
+
+```{r}
+round(cor(train2[,c(3,4,6,13,15)]),3)
+```
+```{r}
+reduced4 <- glm(hq~price+yr_built+bedrooms, family=binomial, data=train2)
+summary(reduced4)
+```
+```{r}
+# check again for potential multicollinearity
+faraway::vif(reduced4)
+```
+
+```{r}
+round(cor(train2[,c(3,4,15)]),3)
+```
+```{r}
+price_only <- glm(hq~price, family=binomial, data=train)
+summary(price_only)
+```
+
+```{r}
+# testing reduced model against single-predictor (price)
+TS <- price_only$deviance-reduced4$deviance
+TS
+1-pchisq(TS,2)
+qchisq(1-0.05,2)
+```
+p-value supports dropping the 2 additional predictors, use only the single-predictor, price-only model.
+```{r}
+##predicted probs for test data
+preds<-predict(reduced4,newdata=test, type="response")
+```
+
+
+```{r}
+##produce the numbers associated with classification table
+rates<-ROCR::prediction(preds, test$hq)
+##store the true positive and false postive rates
+roc_result<-ROCR::performance(rates,measure="tpr", x.measure="fpr")
+##plot ROC curve and overlay the diagonal line for random guessing
+plot(roc_result, main="ROC Curve")
+lines(x = c(0,1), y = c(0,1), col="red")
+```
+
+```{r}
+auc<-ROCR::performance(rates, measure = "auc")
+auc@y.values
+```
+
+```{r}
+##confusion matrix with threshold of 0.5
+table(test$quality, preds>0.5)
+```
+
+
