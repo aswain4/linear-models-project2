@@ -1,0 +1,149 @@
+---
+title: "Project 2"
+author: "Alden Swain"
+date: "2023-11-04"
+output: html_document
+---
+```{r}
+library(tidyverse)
+```
+
+```{r}
+Data<-read.csv("kc_house_data.csv", sep=",", header=TRUE)
+Data <- Data[-c(9715, 12778, 15871, 20453),]
+Data$waterfront <- factor(Data$waterfront)
+levels(Data$waterfront) <- c("No", "Yes")
+
+Data <- Data %>%
+  mutate(size_prop= round((sqft_living/sqft_lot) * 100, 2))
+
+Data <- Data %>%
+  mutate(HQ_LQ= cut(grade, breaks=c(0, 10, Inf), labels=c("low", "high")))
+set.seed(6021)
+sample.data<-sample.int(nrow(Data), floor(.50*nrow(Data)), replace = F)
+train<-Data[sample.data, ]
+test<-Data[-sample.data, ]
+```
+
+
+
+```{r}
+train <- train %>%
+  mutate(reno= cut(yr_renovated, breaks=c(1, 2005, Inf), labels=c("Renovated Years Ago", "Recently Renovated")))
+```
+```{r}
+train$reno[is.na(train$reno)] <- 0
+```
+
+```{r}
+ggplot(data=subset(train, !is.na(reno)), aes(x=HQ_LQ, fill=reno)) +
+  geom_bar(position="fill") +
+  labs(x="Grade Cateogry", y="Proportion", title="Property Grade Based on Recency of Renovations")
+```
+```{r}
+levels(train$reno)
+```
+
+
+
+
+
+
+
+
+
+```{r}
+regnull <- lm(price~1, data=train)
+regfull <- lm(price~bedrooms+bathrooms+sqft_living+sqft_lot+floors+waterfront+view+grade+condition+sqft_above+sqft_basement+yr_built+yr_renovated+sqft_living15+sqft_lot15+size_prop, data=train) #only included the relevant predictors
+```
+```{r}
+step(regnull, scope=list(lower=regnull, upper=regfull), direction="forward")
+```
+
+
+
+```{r}
+step_mod <- lm(price~ sqft_living + grade + yr_built + waterfront + size_prop + view + bedrooms + bathrooms + sqft_living15 + condition + yr_renovated + sqft_lot15, data=train)
+summary(step_mod)
+```
+```{r}
+reduced <- lm(price~ sqft_living + grade + yr_built + waterfront + size_prop + view + bedrooms + bathrooms + sqft_living15 + condition + yr_renovated, data=train)
+
+summary(reduced)
+```
+```{r}
+anova(reduced, step_mod)
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(step_mod)
+# test as scatter, model as smooth
+```
+```{r}
+library(MASS)
+MASS::boxcox(step_mod, lambda = seq(0, 0.2, 1/20))
+```
+```{r}
+step_star<-(train$price)**0.1
+train_step<-data.frame(train,step_star)
+train.ystar<-lm(step_star~sqft_living + grade + yr_built + waterfront + size_prop + view + bedrooms + bathrooms + sqft_living15 + condition + yr_renovated + sqft_lot15, data=train_step)
+#par(mfrow = c(2, 2))
+plot(train.ystar)
+```
+```{r}
+library(faraway)
+sort(faraway::vif(train.ystar))
+```
+```{r}
+step_hii <- lm.influence(train.ystar)$hat ##leverages
+step_student <- rstudent(train.ystar) ##ext studentized res 
+n <- nrow(train)
+p <- 12
+```
+```{r}
+sort(step_hii[step_hii>2*p/n], decreasing = T) #leverages
+```
+```{r}
+step_student[abs(step_student) > 4] #outliers
+```
+
+```{r}
+DFFITS<-dffits(train.ystar) #influential
+sort(DFFITS[abs(DFFITS)>2*sqrt(p/n)], decreasing=T)
+```
+```{r}
+COOKS<-cooks.distance(train.ystar)
+sort(COOKS, decreasing=T)
+```
+```{r}
+library(car)
+car::avPlots(train.ystar)
+```
+
+
+
+
+
+
+```{r}
+predictions <- predict(train.ystar, newdata = test)
+test$price_transform <- (test$price)**0.1
+```
+```{r}
+# Mean Squared Error (MSE)
+mse <- mean((test$price_transform - predictions)^2)
+
+# Root Mean Squared Error (RMSE)
+rmse <- sqrt(mse)
+
+# Mean Absolute Error (MAE)
+mae <- mean(abs(test$price_transform - predictions))
+
+# R-squared
+rsquared <- 1 - sum((test$price_transform - predictions)^2) / sum((test$price_transform - mean(test$price_transform))^2)
+```
+
+
+
