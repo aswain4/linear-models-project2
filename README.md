@@ -1,6 +1,6 @@
 # King County House Sales Analysis
 
-**NOTE: this is the second project for the Linear Models class that is part of UVA's Master's in Data Science program.
+**NOTE: this is the second project for the Linear Models class that is part of UVA's Master's in Data Science program.**
 
 ## Project Overview
 This project analyzes house sale prices in King County, Washington (including Seattle) using data from May 2014 to May 2015. Through statistical analysis and data visualization, we explore factors influencing house prices and market behavior in the Seattle metropolitan area.
